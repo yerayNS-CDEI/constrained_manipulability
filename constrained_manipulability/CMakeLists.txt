@@ -31,6 +31,7 @@ find_package(std_msgs REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_eigen REQUIRED)
 find_package(tf2_eigen_kdl REQUIRED)
+find_package(tf2_kdl REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(visualization_msgs REQUIRED)
 
@@ -47,6 +48,8 @@ find_package(robot_collision_checking REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(octomap REQUIRED)
 add_definitions(-DOCTOMAP_NODEBUGOUT)
+
+find_package(Boost REQUIRED)
 
 find_library(EIGEN_CDDLIB eigen-cddlib)
 
@@ -73,6 +76,7 @@ set(dependencies
   tf2_eigen
   tf2_eigen_kdl
   tf2_ros
+  tf2_kdl
   urdf
   visualization_msgs
   constrained_manipulability_interfaces
@@ -124,6 +128,23 @@ ament_target_dependencies(slicing_polytope_example
   ${dependencies}
 )
 
+add_executable(dynamic_collision_world_node
+  src/dynamic_collision_world_node.cpp
+)
+target_link_libraries(dynamic_collision_world_node
+  ${PROJECT_NAME}
+)
+ament_target_dependencies(dynamic_collision_world_node
+  ${dependencies}
+)
+ament_target_dependencies(${PROJECT_NAME} geometric_shapes)
+
+
+target_link_libraries(${PROJECT_NAME} Boost::boost)
+target_link_libraries(dynamic_collision_world_node Boost::boost)
+target_link_libraries(${PROJECT_NAME} geometric_shapes::geometric_shapes)
+target_link_libraries(dynamic_collision_world_node geometric_shapes::geometric_shapes)
+
 
 ### Install ###
 
@@ -134,6 +155,10 @@ install(TARGETS ${PROJECT_NAME}
 )
 
 install(TARGETS constrained_manipulability_node abstract_scene_example slicing_polytope_example
+  RUNTIME DESTINATION lib/${PROJECT_NAME}
+)
+
+install(TARGETS dynamic_collision_world_node
   RUNTIME DESTINATION lib/${PROJECT_NAME}
 )
 

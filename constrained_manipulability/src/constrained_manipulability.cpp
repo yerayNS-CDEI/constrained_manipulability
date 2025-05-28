@@ -474,11 +474,72 @@ void ConstrainedManipulability::linLimitCallback(const std_msgs::msg::Float32::S
 
 void ConstrainedManipulability::checkCollisionCallback()
 {
+    // joint_state_mutex_.lock();
+    // sensor_msgs::msg::JointState curr_joint_state = joint_state_;
+    // joint_state_mutex_.unlock();
+
+    // // checkCollision(curr_joint_state);    // opcion original
+
+    // bool collision_detected = checkCollision(curr_joint_state);  // opcion propia
+    // if (collision_detected)
+    // {
+    //     RCLCPP_WARN(this->get_logger(), "¡Colisión detectada!");
+    // }
+    // else
+    // {
+    //     RCLCPP_WARN(this->get_logger(), "Sin colisión");
+    // }  
+
+    // static bool last_collision_state = false;
+    // rclcpp::Logger logger = this->get_logger();
+
+    // joint_state_mutex_.lock();
+    // sensor_msgs::msg::JointState curr_joint_state = joint_state_;
+    // joint_state_mutex_.unlock();
+    
+    // bool collision_detected = checkCollision(curr_joint_state);
+
+    // if (collision_detected != last_collision_state)
+    // {
+    //     last_collision_state = collision_detected;
+    //     if (collision_detected)
+    //     {
+    //         RCLCPP_WARN(logger, "¡Colisión detectada!");
+    //     }
+    //     else
+    //     {
+    //         RCLCPP_WARN(logger, "Sin colisión");
+    //     }
+    // }
+
     joint_state_mutex_.lock();
     sensor_msgs::msg::JointState curr_joint_state = joint_state_;
     joint_state_mutex_.unlock();
-    
-    checkCollision(curr_joint_state);
+
+    bool collision_detected = false;
+    try
+    {
+        collision_detected = checkCollision(curr_joint_state);
+    }
+    catch (const std::exception& e)
+    {
+        RCLCPP_ERROR(this->get_logger(), "Exception in checkCollision: %s", e.what());
+        return;
+    }
+    catch (...)
+    {
+        RCLCPP_ERROR(this->get_logger(), "Unknown exception in checkCollision");
+        return;
+    }
+
+    if (collision_detected)
+    {
+        RCLCPP_WARN(this->get_logger(), "¡Colisión detectada!");
+    }
+    else
+    {
+        RCLCPP_INFO(this->get_logger(), "Sin colisión");
+    }
 }
 
 void ConstrainedManipulability::polytopePubCallback()

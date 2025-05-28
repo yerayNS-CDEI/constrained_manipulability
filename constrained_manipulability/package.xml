@@ -33,6 +33,8 @@
   <depend>constrained_manipulability_interfaces</depend>
   <depend>octomap_filter_interfaces</depend>
   <depend>robot_collision_checking</depend>
+
+  <depend>boost</depend>
   
   <exec_depend>ur_description</exec_depend>
   <exec_depend>kortex_description</exec_depend>
