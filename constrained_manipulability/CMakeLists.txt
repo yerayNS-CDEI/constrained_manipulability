@@ -50,6 +50,7 @@ find_package(octomap REQUIRED)
 add_definitions(-DOCTOMAP_NODEBUGOUT)
 
 find_package(Boost REQUIRED)
+# find_package(rosidl_default_generators REQUIRED)
 
 find_library(EIGEN_CDDLIB eigen-cddlib)
 
@@ -139,6 +140,16 @@ ament_target_dependencies(dynamic_collision_world_node
 )
 ament_target_dependencies(${PROJECT_NAME} geometric_shapes)
 
+add_executable(dynamic_scene_node
+  src/dynamic_scene_node.cpp
+)
+target_link_libraries(dynamic_scene_node
+  ${PROJECT_NAME}
+)
+ament_target_dependencies(dynamic_scene_node
+  ${dependencies}
+)
+
 
 target_link_libraries(${PROJECT_NAME} Boost::boost)
 target_link_libraries(dynamic_collision_world_node Boost::boost)
@@ -158,7 +169,7 @@ install(TARGETS constrained_manipulability_node abstract_scene_example slicing_p
   RUNTIME DESTINATION lib/${PROJECT_NAME}
 )
 
-install(TARGETS dynamic_collision_world_node
+install(TARGETS dynamic_collision_world_node dynamic_scene_node
   RUNTIME DESTINATION lib/${PROJECT_NAME}
 )
 

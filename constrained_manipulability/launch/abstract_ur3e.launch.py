@@ -14,7 +14,7 @@ def generate_launch_description():
             get_package_share_directory('constrained_manipulability'), 'launch'),
             '/abstract_robot.launch.py']),
         launch_arguments={
-            'scene_config': 'example_scene_ur3',
+            'scene_config': 'example_scene_flat',
             'root': 'base_link',
             'tip': 'tool0',
             'show_mp': 'True',
@@ -31,5 +31,5 @@ def generate_launch_description():
 
     return LaunchDescription([
         abstract_robot_launch,
-        ur_launch
+        # ur_launch
     ])
