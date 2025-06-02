@@ -34,7 +34,7 @@
 #include <rclcpp/parameter_client.hpp>
 #include <geometric_shapes/shape_operations.h>
 #include <Eigen/Geometry>
-#include <tf2_kdl/tf2_kdl.h> 
+#include <tf2_kdl/tf2_kdl.hpp> 
 #include <kdl/chainfksolverpos_recursive.hpp>
 #include <kdl/jntarray.hpp>
 
@@ -136,7 +136,7 @@ public:
             rclcpp::shutdown();
             return;
         }
-        fk_solver_ = KDL::ChainFkSolverPos_recursive(kdl_chain_);
+        fk_solver_ = std::make_unique<KDL::ChainFkSolverPos_recursive>(kdl_chain_);
 
         collision_world_ = std::make_shared<robot_collision_checking::FCLInterfaceCollisionWorld>("world");
         auto geometry_info = extractCollisionGeometryFromURDF(urdf_model_);
@@ -296,7 +296,7 @@ private:
     urdf::Model urdf_model_;
     KDL::Tree kdl_tree_;
     KDL::Chain kdl_chain_;
-    KDL::ChainFkSolverPos_recursive fk_solver_;
+    std::unique_ptr<KDL::ChainFkSolverPos_recursive> fk_solver_;
     std::string root_link_ = "base_link";  // Cambia si necesitas otro root
     std::string tip_link_ = "tool0";       // Cambia si necesitas otro tip
 
@@ -315,27 +315,23 @@ private:
 
     void updateRobotCollisionPoses(const std::vector<double> & joint_positions)
     {
-        // Vector KDL para las posiciones articulares
         KDL::JntArray joint_array(kdl_chain_.getNrOfJoints());
         for (size_t i = 0; i < joint_array.rows(); i++) {
             joint_array(i) = joint_positions[i];
         }
 
-        // Para cada segmento, calculamos la pose FK y actualizamos el objeto de colisión
         int collision_obj_index = 0;
 
         for (size_t i = 0; i < kdl_chain_.getNrOfSegments(); i++)
         {
             KDL::Frame segment_frame;
-            if (fk_solver_.JntToCart(joint_array, segment_frame, i + 1) >= 0)
+            if (fk_solver_->JntToCart(joint_array, segment_frame, i + 1) >= 0)
             {
                 Eigen::Affine3d eigen_pose;
-                geometry_msgs::msg::Transform tf_msg = tf2_kdl::toMsg(segment_frame);
-                tf2::fromMsg(tf_msg, eigen_pose);
+                geometry_msgs::msg::Pose pose_msg = tf2::toMsg(segment_frame);
+                tf2::fromMsg(pose_msg, eigen_pose);
 
-                // Actualizar el objeto de colisión i (suponiendo que el orden de colisiones corresponde)
                 collision_world_->updateCollisionObjectPose(collision_obj_index, eigen_pose);
-
                 collision_obj_index++;
             }
             else

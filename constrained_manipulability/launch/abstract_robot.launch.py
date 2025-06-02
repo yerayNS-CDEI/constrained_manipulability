@@ -62,8 +62,8 @@ def generate_launch_description():
     }
     constrained_manip_node = Node(
         package='constrained_manipulability',
-        executable='constrained_manipulability_node',
-        name='constrained_manipulability_node',
+        executable='constrained_manipulability_node_mod',
+        name='constrained_manipulability_node_mod',
         parameters=[constrained_manip_params]
     )
 

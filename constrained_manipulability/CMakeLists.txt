@@ -87,6 +87,7 @@ set(dependencies
 
 add_library(${PROJECT_NAME} SHARED
   src/constrained_manipulability.cpp
+  src/constrained_manipulability_mod.cpp
   src/constrained_manipulability_utils.cpp
   src/polytope.cpp
 )
@@ -106,6 +107,16 @@ target_link_libraries(constrained_manipulability_node
   ${PROJECT_NAME}
 )
 ament_target_dependencies(constrained_manipulability_node
+  ${dependencies}
+)
+
+add_executable(constrained_manipulability_node_mod
+  src/constrained_manipulability_mod_main.cpp
+)
+target_link_libraries(constrained_manipulability_node_mod
+  ${PROJECT_NAME}
+)
+ament_target_dependencies(constrained_manipulability_node_mod
   ${dependencies}
 )
 
@@ -169,7 +180,7 @@ install(TARGETS constrained_manipulability_node abstract_scene_example slicing_p
   RUNTIME DESTINATION lib/${PROJECT_NAME}
 )
 
-install(TARGETS dynamic_collision_world_node dynamic_scene_node
+install(TARGETS dynamic_collision_world_node dynamic_scene_node constrained_manipulability_node_mod
   RUNTIME DESTINATION lib/${PROJECT_NAME}
 )
 
