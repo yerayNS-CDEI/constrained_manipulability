@@ -74,12 +74,12 @@ def generate_launch_description():
         show_mp_arg,
         show_cmp_arg,
         constrained_manip_node, 
-        OpaqueFunction(function=lambda context: [
-            Node(
-                package='constrained_manipulability',
-                executable='abstract_scene_example',
-                name='abstract_scene_example',
-                parameters=[get_scene_config_file(context)]
-            )
-        ])
+        # OpaqueFunction(function=lambda context: [
+        #     Node(
+        #         package='constrained_manipulability',
+        #         executable='abstract_scene_example',
+        #         name='abstract_scene_example',
+        #         parameters=[get_scene_config_file(context)]
+        #     )
+        # ])
     ])

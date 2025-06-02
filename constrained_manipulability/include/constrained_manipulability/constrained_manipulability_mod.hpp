@@ -54,6 +54,8 @@
 #include "constrained_manipulability_interfaces/srv/get_polytopes.hpp"
 #include "constrained_manipulability_interfaces/srv/get_sliced_polytope.hpp"
 
+#include "constrained_manipulability_interfaces/srv/update_collision_pose.hpp"
+
 namespace constrained_manipulability
 {
 /// GeometryInformation contains all geometric information obtained from chain
@@ -93,6 +95,8 @@ class ConstrainedManipulabilityMod : public rclcpp::Node
                                   std::shared_ptr<constrained_manipulability_interfaces::srv::GetPolytopes::Response> res);
         void getSlicedPolytopeCallback(const std::shared_ptr<constrained_manipulability_interfaces::srv::GetSlicedPolytope::Request> req,
                                        std::shared_ptr<constrained_manipulability_interfaces::srv::GetSlicedPolytope::Response> res);
+        void updateCollisionObjectPoseCallback(const std::shared_ptr<constrained_manipulability_interfaces::srv::UpdateCollisionPose::Request> req,
+                                std::shared_ptr<constrained_manipulability_interfaces::srv::UpdateCollisionPose::Response> res);
 
         void jointStateCallback(const sensor_msgs::msg::JointState::SharedPtr msg);
         void octomapCallback(const octomap_msgs::msg::Octomap::SharedPtr msg);
@@ -237,6 +241,10 @@ class ConstrainedManipulabilityMod : public rclcpp::Node
         // Check for collisions given a joint state
         bool checkCollision(const sensor_msgs::msg::JointState& joint_state);
 
+        // Check for collisions given a joint state
+        bool checkSelfCollision(const GeometryInformation& geometry_information);
+        bool isAdjacent(int i, int j) const;
+
         // Display calculated collision model in RViz
         void displayCollisionModel(const GeometryInformation& geometry_information, const Eigen::Vector4d& color = {0.1, 0.5, 0.2, 0.5}) const;
 
@@ -346,6 +354,7 @@ class ConstrainedManipulabilityMod : public rclcpp::Node
         rclcpp::Service<constrained_manipulability_interfaces::srv::GetJacobianMatrix>::SharedPtr jacobian_server_;
         rclcpp::Service<constrained_manipulability_interfaces::srv::GetPolytopes>::SharedPtr polytopes_server_;
         rclcpp::Service<constrained_manipulability_interfaces::srv::GetSlicedPolytope>::SharedPtr sliced_polytope_server_;
+        rclcpp::Service<constrained_manipulability_interfaces::srv::UpdateCollisionPose>::SharedPtr update_pos_server_;
 
         // ROS subscribers/publishers/timers
         rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr joint_sub_;
