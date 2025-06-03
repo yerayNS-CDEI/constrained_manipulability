@@ -15,6 +15,12 @@
 
 #include "constrained_manipulability/constrained_manipulability_mod.hpp"
 
+#include <set>
+#include <cmath>
+#include <Eigen/Dense>
+#include <geometry_msgs/msg/pose.hpp>
+
+
 namespace constrained_manipulability
 {
 ConstrainedManipulabilityMod::ConstrainedManipulabilityMod(const rclcpp::NodeOptions& options) : Node("constrained_manipulability_mod", options)
@@ -206,6 +212,9 @@ ConstrainedManipulabilityMod::ConstrainedManipulabilityMod(const rclcpp::NodeOpt
     obj_dist_pub_ = this->create_publisher<constrained_manipulability_interfaces::msg::ObjectDistances>("constrained_manipulability/obj_distances", 1);
     filt_mesh_pub_ = this->create_publisher<octomap_filter_interfaces::msg::FilterMesh>("filter_mesh", 1);
     filt_prim_pub_ = this->create_publisher<octomap_filter_interfaces::msg::FilterPrimitive>("filter_primitive", 1);
+    occupancy_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("occupancy_grid", 10);
+    occupied_voxels_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("occupied_voxel_centers", rclcpp::QoS(1).transient_local());
+    evaluated_voxels_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("evaluated_voxel_centers", rclcpp::QoS(1).transient_local());
 
     RCLCPP_INFO(this->get_logger(), "Initialized constrained_manipulability");
 }
@@ -344,6 +353,158 @@ void ConstrainedManipulabilityMod::octomapCallback(const octomap_msgs::msg::Octo
     collision_world_->addCollisionObject(octo_obj, OCTOMAP_ID);
 }
 
+void ConstrainedManipulabilityMod::generateOccupancyGrid()
+{
+    boost::mutex::scoped_lock lock(collision_world_mutex_);
+
+    const double resolution = 0.05;  // tamaño del voxel
+    const double half_res = resolution / 2.0;
+
+    std::set<std::tuple<int, int, int>> occupied_cells;
+    std::vector<Eigen::Vector3d> all_voxel_centers;
+
+    for (const auto& obj : collision_world_->getCollisionObjects())
+    {
+        if (!obj)
+            continue;
+
+        const fcl::AABBd& aabb = obj->collision_object->getAABB();
+
+        double x_start = std::floor(aabb.min_.x() / resolution) * resolution - half_res;
+        double y_start = std::floor(aabb.min_.y() / resolution) * resolution - half_res;
+        double z_start = std::floor(aabb.min_.z() / resolution) * resolution - half_res;
+
+        double x_end = std::ceil(aabb.max_.x() / resolution) * resolution + half_res;
+        double y_end = std::ceil(aabb.max_.y() / resolution) * resolution + half_res;
+        double z_end = std::ceil(aabb.max_.z() / resolution) * resolution + half_res;
+
+        for (double x = x_start; x <= x_end; x += resolution)
+        {
+            for (double y = y_start; y <= y_end; y += resolution)
+            {
+                for (double z = z_start; z <= z_end; z += resolution)
+                {
+                    Eigen::Vector3d voxel_center(x + half_res, y + half_res, z + half_res);
+                    all_voxel_centers.push_back(voxel_center);
+                    fcl::Transform3d tf = fcl::Transform3d::Identity();
+                    tf.translation() = voxel_center;
+
+                    auto voxel_shape = std::make_shared<fcl::Boxd>(resolution, resolution, resolution);
+                    fcl::CollisionObjectd voxel_box(voxel_shape, tf);
+
+                    fcl::DistanceRequestd req(true);  // enable signed distance
+                    fcl::DistanceResultd res;
+                    double distance = fcl::distance(&voxel_box, obj->collision_object.get(), req, res);
+
+                    // Tolerancia mayor para considerar interiores
+                    if (distance < resolution * 0.75)  // por ejemplo 75% del tamaño del voxel
+                    {
+                        int xi = static_cast<int>(std::floor(x / resolution));
+                        int yi = static_cast<int>(std::floor(y / resolution));
+                        int zi = static_cast<int>(std::floor(z / resolution));
+                        occupied_cells.emplace(xi, yi, zi);
+                    }
+                    if (distance > 0.5 * resolution && distance < 1.5 * resolution)
+                    {
+                        RCLCPP_INFO(this->get_logger(), "Near miss at voxel (%.2f, %.2f, %.2f), distance = %.4f",
+                                    voxel_center.x(), voxel_center.y(), voxel_center.z(), distance);
+                    }
+                }
+            }
+        }
+    }
+
+    RCLCPP_INFO(this->get_logger(), "Total occupied voxels: %zu", occupied_cells.size());
+    publishVoxelMarkers(occupied_cells, resolution);
+
+    sensor_msgs::msg::PointCloud2 cloud_msg;
+    cloud_msg.header.stamp = this->now();
+    cloud_msg.header.frame_id = "base_link";  // o el frame correcto
+
+    sensor_msgs::PointCloud2Modifier modifier(cloud_msg);
+    modifier.setPointCloud2FieldsByString(1, "xyz");
+    modifier.resize(occupied_cells.size());
+
+    sensor_msgs::PointCloud2Iterator<float> iter_x(cloud_msg, "x");
+    sensor_msgs::PointCloud2Iterator<float> iter_y(cloud_msg, "y");
+    sensor_msgs::PointCloud2Iterator<float> iter_z(cloud_msg, "z");
+
+    for (const auto& cell : occupied_cells) {
+        geometry_msgs::msg::Point32 pt;
+        pt.x = (static_cast<float>(std::get<0>(cell)) + 0.5f) * resolution;
+        pt.y = (static_cast<float>(std::get<1>(cell)) + 0.5f) * resolution;
+        pt.z = (static_cast<float>(std::get<2>(cell)) + 0.5f) * resolution;
+        *iter_x = pt.x;
+        *iter_y = pt.y;
+        *iter_z = pt.z;
+        ++iter_x;
+        ++iter_y;
+        ++iter_z;
+    }
+
+    occupied_voxels_pub_->publish(cloud_msg);
+
+    sensor_msgs::msg::PointCloud2 eval_cloud;
+    eval_cloud.header.stamp = this->now();
+    eval_cloud.header.frame_id = "base_link";
+
+    sensor_msgs::PointCloud2Modifier eval_modifier(eval_cloud);
+    eval_modifier.setPointCloud2FieldsByString(2, "xyz", "rgb");
+    eval_modifier.resize(all_voxel_centers.size());
+
+    sensor_msgs::PointCloud2Iterator<float> ex(eval_cloud, "x");
+    sensor_msgs::PointCloud2Iterator<float> ey(eval_cloud, "y");
+    sensor_msgs::PointCloud2Iterator<float> ez(eval_cloud, "z");
+    sensor_msgs::PointCloud2Iterator<uint8_t> er(eval_cloud, "rgb");
+
+    for (const auto& pt : all_voxel_centers) {
+        *ex = pt.x();
+        *ey = pt.y();
+        *ez = pt.z();
+        uint8_t r = 255, g = 0, b = 0;
+        uint32_t rgb = (r << 16) | (g << 8) | b;
+        *er = *reinterpret_cast<float*>(&rgb);
+        ++ex; ++ey; ++ez; ++er;
+    }
+
+    evaluated_voxels_pub_->publish(eval_cloud);
+
+}
+
+void ConstrainedManipulabilityMod::publishVoxelMarkers(const std::set<std::tuple<int, int, int>>& occupied_cells, double resolution)
+{
+    visualization_msgs::msg::MarkerArray marker_array;
+    int id = 0;
+
+    for (const auto& [xi, yi, zi] : occupied_cells)
+    {
+        visualization_msgs::msg::Marker marker;
+        marker.header.frame_id = "world";  // usa tu frame adecuado
+        marker.header.stamp = this->now();
+        marker.ns = "occupied_voxels";
+        marker.id = id++;
+        marker.type = visualization_msgs::msg::Marker::CUBE;
+        marker.action = visualization_msgs::msg::Marker::ADD;
+        marker.pose.position.x = (xi + 0.5) * resolution;
+        marker.pose.position.y = (yi + 0.5) * resolution;
+        marker.pose.position.z = (zi + 0.5) * resolution;
+        marker.pose.orientation.w = 1.0;
+        marker.scale.x = resolution;
+        marker.scale.y = resolution;
+        marker.scale.z = resolution;
+        marker.color.r = 0.0f;
+        marker.color.g = 0.8f;
+        marker.color.b = 0.1f;
+        marker.color.a = 0.5f;
+        marker.lifetime = rclcpp::Duration::from_seconds(1.0);  // permanente
+
+        marker_array.markers.push_back(marker);
+    }
+
+    occupancy_pub_->publish(marker_array);
+}
+
+
 void ConstrainedManipulabilityMod::linLimitCallback(const std_msgs::msg::Float32::SharedPtr msg)
 {
     setLinearizationLimit(msg->data);    
@@ -389,12 +550,12 @@ void ConstrainedManipulabilityMod::checkCollisionCallback()
     //     }
     // }
 
-    static bool last_collision_state = false;
-    bool collision_detected = false;
-
     joint_state_mutex_.lock();
     sensor_msgs::msg::JointState curr_joint_state = joint_state_;
     joint_state_mutex_.unlock();
+
+
+    bool collision_detected = false;
 
     try
     {
@@ -411,9 +572,9 @@ void ConstrainedManipulabilityMod::checkCollisionCallback()
         return;
     }
 
-    if (collision_detected != last_collision_state)
+    if (collision_detected != last_collision_state_)
     {
-        last_collision_state = collision_detected;
+        last_collision_state_ = collision_detected;
         if (collision_detected)
         {
             RCLCPP_WARN(this->get_logger(), "Collision detected!");
@@ -459,13 +620,10 @@ bool ConstrainedManipulabilityMod::checkCollision(const sensor_msgs::msg::JointS
     boost::mutex::scoped_lock lock(collision_world_mutex_);
 
     // Chequeo de colisiones propias
-
-    static bool last_self_collision_state = false;
-
     bool self_collision_detected = checkSelfCollision(geometry_information);
-    if (self_collision_detected != last_self_collision_state)
+    if (self_collision_detected != last_self_collision_state_)
     {
-        last_self_collision_state = self_collision_detected;
+        last_self_collision_state_ = self_collision_detected;
         if (self_collision_detected)
         {
             RCLCPP_WARN(this->get_logger(), "¡Self-collision detected!");
@@ -522,6 +680,7 @@ bool ConstrainedManipulabilityMod::checkCollision(const sensor_msgs::msg::JointS
 
 bool ConstrainedManipulabilityMod::checkSelfCollision(const GeometryInformation& geometry_information)
 {
+    bool any_collision_active = false;
     int n = geometry_information.shapes.size();
 
     for (int i = 0; i < n; ++i)
@@ -546,15 +705,30 @@ bool ConstrainedManipulabilityMod::checkSelfCollision(const GeometryInformation&
 
             fcl::collide(&obj_i, &obj_j, request, result);
 
-            if (result.isCollision())
+            bool collision_detected = result.isCollision();
+            auto key = std::make_pair(i, j);
+            if (collision_detected != links_collision_states_[key])
             {
-                RCLCPP_WARN(this->get_logger(), "Self-collision detected between link %d and link %d", i, j);
-                return true;
+                links_collision_states_[key] = collision_detected;
+                if (collision_detected)
+                {
+                    RCLCPP_WARN(this->get_logger(), "Self-collision detected between link %d and link %d", i, j);
+                    return true;
+                }
+                else
+                {
+                    RCLCPP_INFO(this->get_logger(), "Self-collision cleared between link %d and link %d", i, j);
+                }
+            }
+            // Registrar si hay alguna colisión activa
+            if (collision_detected)
+            {
+                any_collision_active = true;
             }
         }
     }
 
-    return false;
+    return any_collision_active;
 }
 
 bool ConstrainedManipulabilityMod::isAdjacent(int i, int j) const
@@ -563,7 +737,7 @@ bool ConstrainedManipulabilityMod::isAdjacent(int i, int j) const
     return (std::abs(i - j) == 1);
 }
 
-void ConstrainedManipulabilityMod::displayCollisionModel(const GeometryInformation& geometry_information, const Eigen::Vector4d& color) const
+void ConstrainedManipulabilityMod::displayCollisionModel(const GeometryInformation& geometry_information, const Eigen::Vector4d& color)
 {
     auto marker_array_msg = std::make_shared<visualization_msgs::msg::MarkerArray>();
 
@@ -696,6 +870,8 @@ void ConstrainedManipulabilityMod::displayCollisionModel(const GeometryInformati
     }
 
     mkr_pub_->publish(*marker_array_msg);
+
+    generateOccupancyGrid();
 }
 
 void ConstrainedManipulabilityMod::convertCollisionModel(const GeometryInformation& geometry_information,

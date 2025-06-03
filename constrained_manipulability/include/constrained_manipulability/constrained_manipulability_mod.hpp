@@ -55,6 +55,8 @@
 #include "constrained_manipulability_interfaces/srv/get_sliced_polytope.hpp"
 
 #include "constrained_manipulability_interfaces/srv/update_collision_pose.hpp"
+#include <sensor_msgs/msg/point_cloud2.hpp>
+#include <sensor_msgs/point_cloud2_iterator.hpp>
 
 namespace constrained_manipulability
 {
@@ -100,6 +102,8 @@ class ConstrainedManipulabilityMod : public rclcpp::Node
 
         void jointStateCallback(const sensor_msgs::msg::JointState::SharedPtr msg);
         void octomapCallback(const octomap_msgs::msg::Octomap::SharedPtr msg);
+        void generateOccupancyGrid();
+        void publishVoxelMarkers(const std::set<std::tuple<int, int, int>>& occupied_cells, double resolution);
         void linLimitCallback(const std_msgs::msg::Float32::SharedPtr msg);
 
         void checkCollisionCallback();
@@ -246,7 +250,7 @@ class ConstrainedManipulabilityMod : public rclcpp::Node
         bool isAdjacent(int i, int j) const;
 
         // Display calculated collision model in RViz
-        void displayCollisionModel(const GeometryInformation& geometry_information, const Eigen::Vector4d& color = {0.1, 0.5, 0.2, 0.5}) const;
+        void displayCollisionModel(const GeometryInformation& geometry_information, const Eigen::Vector4d& color = {0.1, 0.5, 0.2, 0.5});
 
         void convertCollisionModel(const GeometryInformation& geometry_information,
                                    std::vector<shapes::ShapeMsg>& current_shapes,
@@ -334,6 +338,9 @@ class ConstrainedManipulabilityMod : public rclcpp::Node
         std::shared_ptr<robot_collision_checking::FCLInterfaceCollisionWorld> collision_world_;
         boost::mutex collision_world_mutex_;
         std::vector<robot_collision_checking::FCLCollisionGeometryPtr> robot_collision_geometry_;
+        bool last_collision_state_ = false;
+        bool last_self_collision_state_ = false;
+        std::map<std::pair<int, int>, bool> links_collision_states_;
 
         // Robot kinematics
         KDL::Chain chain_;
@@ -369,5 +376,8 @@ class ConstrainedManipulabilityMod : public rclcpp::Node
         rclcpp::Publisher<constrained_manipulability_interfaces::msg::Polytope>::SharedPtr poly_pub_;
         rclcpp::Publisher<octomap_filter_interfaces::msg::FilterMesh>::SharedPtr filt_mesh_pub_;
         rclcpp::Publisher<octomap_filter_interfaces::msg::FilterPrimitive>::SharedPtr filt_prim_pub_;
+        rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr occupancy_pub_;
+        rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr occupied_voxels_pub_;
+        rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr evaluated_voxels_pub_;
 };
 } // namespace constrained_manipulability
