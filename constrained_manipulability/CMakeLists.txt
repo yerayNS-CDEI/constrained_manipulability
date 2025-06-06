@@ -90,6 +90,7 @@ add_library(${PROJECT_NAME} SHARED
   src/constrained_manipulability_mod.cpp
   src/constrained_manipulability_utils.cpp
   src/polytope.cpp
+  src/path_collision_checking.cpp
 )
 target_link_libraries(${PROJECT_NAME}
   ${Eigen3_LIBRARIES}
@@ -117,6 +118,16 @@ target_link_libraries(constrained_manipulability_node_mod
   ${PROJECT_NAME}
 )
 ament_target_dependencies(constrained_manipulability_node_mod
+  ${dependencies}
+)
+
+add_executable(path_collision_checking
+  src/path_collision_checking_main.cpp
+)
+target_link_libraries(path_collision_checking
+  ${PROJECT_NAME}
+)
+ament_target_dependencies(path_collision_checking
   ${dependencies}
 )
 
@@ -180,7 +191,7 @@ install(TARGETS constrained_manipulability_node abstract_scene_example slicing_p
   RUNTIME DESTINATION lib/${PROJECT_NAME}
 )
 
-install(TARGETS dynamic_collision_world_node dynamic_scene_node constrained_manipulability_node_mod
+install(TARGETS dynamic_collision_world_node dynamic_scene_node constrained_manipulability_node_mod path_collision_checking
   RUNTIME DESTINATION lib/${PROJECT_NAME}
 )
 

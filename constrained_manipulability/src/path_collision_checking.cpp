@@ -13,7 +13,7 @@
 
 #include "constrained_manipulability_interfaces/msg/matrix.hpp"
 
-#include "constrained_manipulability/constrained_manipulability_mod.hpp"
+#include "constrained_manipulability/path_collision_checking.hpp"
 
 #include <set>
 #include <cmath>
@@ -23,7 +23,7 @@
 
 namespace constrained_manipulability
 {
-ConstrainedManipulabilityMod::ConstrainedManipulabilityMod(const rclcpp::NodeOptions& options) : Node("constrained_manipulability_mod", options)
+PathCollisionChecking::PathCollisionChecking(const rclcpp::NodeOptions& options) : Node("path_collision_checking", options)
 {
     // Populate private properties
     base_link_ = this->declare_parameter<std::string>("root", "base_link");
@@ -33,16 +33,6 @@ ConstrainedManipulabilityMod::ConstrainedManipulabilityMod(const rclcpp::NodeOpt
     dangerfield_ = this->declare_parameter<double>("dangerfield", 10.0);
 
     double lin_limit = this->declare_parameter<double>("linearization_limit", 0.1);
-
-    publish_mp_ = this->declare_parameter<bool>("publish_mp", true);
-    publish_cmp_ = this->declare_parameter<bool>("publish_cmp", true);
-    publish_vp_ = this->declare_parameter<bool>("publish_vp", true);
-    publish_cvp_ = this->declare_parameter<bool>("publish_cvp", true);
-
-    show_mp_ = this->declare_parameter<bool>("show_mp", true);
-    show_cmp_ = this->declare_parameter<bool>("show_cmp", true);
-    show_vp_ = this->declare_parameter<bool>("show_vp", false);
-    show_cvp_ = this->declare_parameter<bool>("show_cvp", false);
 
     filter_robot_ = this->declare_parameter<bool>("filter_robot", false);
 
@@ -176,15 +166,15 @@ ConstrainedManipulabilityMod::ConstrainedManipulabilityMod(const rclcpp::NodeOpt
 
     // Instantiate ROS services and subscribers/publishers
     mesh_coll_server_ = this->create_service<constrained_manipulability_interfaces::srv::AddRemoveCollisionMesh>(
-        "add_remove_collision_mesh",  std::bind(&ConstrainedManipulabilityMod::addRemoveMeshCallback, this, std::placeholders::_1, std::placeholders::_2));
+        "add_remove_collision_mesh",  std::bind(&PathCollisionChecking::addRemoveMeshCallback, this, std::placeholders::_1, std::placeholders::_2));
     solid_coll_server_ = this->create_service<constrained_manipulability_interfaces::srv::AddRemoveCollisionSolid>(
-        "add_remove_collision_solid",  std::bind(&ConstrainedManipulabilityMod::addRemoveSolidCallback, this, std::placeholders::_1, std::placeholders::_2));
-    jacobian_server_ = this->create_service<constrained_manipulability_interfaces::srv::GetJacobianMatrix>(
-        "get_jacobian_matrix",  std::bind(&ConstrainedManipulabilityMod::getJacobianCallback, this, std::placeholders::_1, std::placeholders::_2));
+        "add_remove_collision_solid",  std::bind(&PathCollisionChecking::addRemoveSolidCallback, this, std::placeholders::_1, std::placeholders::_2));
+    // jacobian_server_ = this->create_service<constrained_manipulability_interfaces::srv::GetJacobianMatrix>(
+    //     "get_jacobian_matrix",  std::bind(&PathCollisionChecking::getJacobianCallback, this, std::placeholders::_1, std::placeholders::_2));
     update_pos_server_ = this->create_service<constrained_manipulability_interfaces::srv::UpdateCollisionPose>(
-        "update_collision_pose",  std::bind(&ConstrainedManipulabilityMod::updateCollisionObjectPoseCallback, this, std::placeholders::_1, std::placeholders::_2));
+        "update_collision_pose",  std::bind(&PathCollisionChecking::updateCollisionObjectPoseCallback, this, std::placeholders::_1, std::placeholders::_2));
     check_collision_pose_server_ = this->create_service<constrained_manipulability_interfaces::srv::CheckCollisionPose>(
-        "check_collision_pose",  std::bind(&ConstrainedManipulabilityMod::checkCollisionPoseCallback, this, std::placeholders::_1, std::placeholders::_2));
+        "check_collision_pose",  std::bind(&PathCollisionChecking::checkCollisionPoseCallback, this, std::placeholders::_1, std::placeholders::_2));
 
     rclcpp::SubscriptionOptions joint_sub_options;
     joint_sub_options.callback_group = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
@@ -194,24 +184,24 @@ ConstrainedManipulabilityMod::ConstrainedManipulabilityMod(const rclcpp::NodeOpt
     lin_lim_sub_options.callback_group = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
     
     joint_sub_ = this->create_subscription<sensor_msgs::msg::JointState>(
-        "/joint_states", rclcpp::QoS(1), 
-        std::bind(&ConstrainedManipulabilityMod::jointStateCallback, this, std::placeholders::_1),
+        "joint_states", rclcpp::QoS(1), 
+        std::bind(&PathCollisionChecking::jointStateCallback, this, std::placeholders::_1),
         joint_sub_options);
     octomap_filter_sub_ = this->create_subscription<octomap_msgs::msg::Octomap>(
         "/octomap_filtered", rclcpp::QoS(1), 
-        std::bind(&ConstrainedManipulabilityMod::octomapCallback, this, std::placeholders::_1),
+        std::bind(&PathCollisionChecking::octomapCallback, this, std::placeholders::_1),
         octo_sub_options);
-    lin_limit_sub_ = this->create_subscription<std_msgs::msg::Float32>(
-        "/lin_limit", rclcpp::QoS(1), 
-        std::bind(&ConstrainedManipulabilityMod::linLimitCallback, this, std::placeholders::_1),
-        lin_lim_sub_options);
+    // lin_limit_sub_ = this->create_subscription<std_msgs::msg::Float32>(
+    //     "/lin_limit", rclcpp::QoS(1), 
+    //     std::bind(&PathCollisionChecking::linLimitCallback, this, std::placeholders::_1),
+    //     lin_lim_sub_options);
 
-    coll_check_timer_ = this->create_wall_timer(
-            std::chrono::milliseconds(250),
-            std::bind(&ConstrainedManipulabilityMod::checkCollisionCallback, this));
+    // coll_check_timer_ = this->create_wall_timer(
+    //         std::chrono::milliseconds(250),
+    //         std::bind(&PathCollisionChecking::checkCollisionCallback, this));
 
     mkr_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("visualization_marker", 1);
-    obj_dist_pub_ = this->create_publisher<constrained_manipulability_interfaces::msg::ObjectDistances>("constrained_manipulability/obj_distances", 1);
+    // obj_dist_pub_ = this->create_publisher<constrained_manipulability_interfaces::msg::ObjectDistances>("constrained_manipulability/obj_distances", 1);
     filt_mesh_pub_ = this->create_publisher<octomap_filter_interfaces::msg::FilterMesh>("filter_mesh", 1);
     filt_prim_pub_ = this->create_publisher<octomap_filter_interfaces::msg::FilterPrimitive>("filter_primitive", 1);
     occupancy_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("occupancy_grid", 10);
@@ -224,7 +214,7 @@ ConstrainedManipulabilityMod::ConstrainedManipulabilityMod(const rclcpp::NodeOpt
 
 /// ROS interface methods
 
-void ConstrainedManipulabilityMod::addRemoveMeshCallback(const std::shared_ptr<constrained_manipulability_interfaces::srv::AddRemoveCollisionMesh::Request> req,
+void PathCollisionChecking::addRemoveMeshCallback(const std::shared_ptr<constrained_manipulability_interfaces::srv::AddRemoveCollisionMesh::Request> req,
                                                       std::shared_ptr<constrained_manipulability_interfaces::srv::AddRemoveCollisionMesh::Response> res)
 {
     res->result = false;
@@ -247,7 +237,7 @@ void ConstrainedManipulabilityMod::addRemoveMeshCallback(const std::shared_ptr<c
     res->result = true;
 }
 
-void ConstrainedManipulabilityMod::addRemoveSolidCallback(const std::shared_ptr<constrained_manipulability_interfaces::srv::AddRemoveCollisionSolid::Request> req,
+void PathCollisionChecking::addRemoveSolidCallback(const std::shared_ptr<constrained_manipulability_interfaces::srv::AddRemoveCollisionSolid::Request> req,
                                                        std::shared_ptr<constrained_manipulability_interfaces::srv::AddRemoveCollisionSolid::Response> res)
 {
     res->result = false;
@@ -267,7 +257,7 @@ void ConstrainedManipulabilityMod::addRemoveSolidCallback(const std::shared_ptr<
     }
 }
 
-void ConstrainedManipulabilityMod::updateCollisionObjectPoseCallback(const std::shared_ptr<constrained_manipulability_interfaces::srv::UpdateCollisionPose::Request> req,
+void PathCollisionChecking::updateCollisionObjectPoseCallback(const std::shared_ptr<constrained_manipulability_interfaces::srv::UpdateCollisionPose::Request> req,
                                                        std::shared_ptr<constrained_manipulability_interfaces::srv::UpdateCollisionPose::Response> res)
 {
     Eigen::Affine3d new_pose;
@@ -275,25 +265,18 @@ void ConstrainedManipulabilityMod::updateCollisionObjectPoseCallback(const std::
     res->result = collision_world_->updateCollisionObjectPose(req->object_id, new_pose);
 }
 
-void ConstrainedManipulabilityMod::checkCollisionPoseCallback(const std::shared_ptr<constrained_manipulability_interfaces::srv::CheckCollisionPose::Request> req,
+void PathCollisionChecking::checkCollisionPoseCallback(const std::shared_ptr<constrained_manipulability_interfaces::srv::CheckCollisionPose::Request> req,
                                                         std::shared_ptr<constrained_manipulability_interfaces::srv::CheckCollisionPose::Response> res)
 {
     try 
     {
+        sensor_msgs::msg::JointState prefixed_state = convertToNamespaceJointState(req->joint_state);
+
         bool self_col, env_col;
-        res->in_collision = evaluateCollisionState(req->joint_state, self_col, env_col);
-
-        sensor_msgs::msg::JointState prefixed_state;
-        prefixed_state.header.stamp = this->now();
-        prefixed_state.position = req->joint_state.position;
-        prefixed_state.velocity = req->joint_state.velocity;
-        prefixed_state.effort = req->joint_state.effort;
-
-        for (const auto& name : req->joint_state.name) {
-            prefixed_state.name.push_back("collision_" + name);
+        res->in_collision = evaluateCollisionState(prefixed_state, self_col, env_col);
+        if (req->publish_visualization) {
+            evaluated_joint_pub_->publish(prefixed_state);
         }
-
-        evaluated_joint_pub_->publish(prefixed_state);
     } 
     catch (const std::exception& e) 
     {
@@ -302,16 +285,28 @@ void ConstrainedManipulabilityMod::checkCollisionPoseCallback(const std::shared_
     }
 }
 
-
-void ConstrainedManipulabilityMod::getJacobianCallback(const std::shared_ptr<constrained_manipulability_interfaces::srv::GetJacobianMatrix::Request> req,
-                                                    std::shared_ptr<constrained_manipulability_interfaces::srv::GetJacobianMatrix::Response> res)
+sensor_msgs::msg::JointState PathCollisionChecking::convertToNamespaceJointState(const sensor_msgs::msg::JointState& input) const
 {
-    Eigen::Matrix<double, 6, Eigen::Dynamic> base_J_ee;
-    getJacobian(req->joint_state, base_J_ee);
-    res->jacobian = eigenToMatrix(base_J_ee);
+    sensor_msgs::msg::JointState visual;
+    visual.header.stamp = this->now();
+    visual.position = input.position;
+    visual.velocity = input.velocity;
+    visual.effort = input.effort;
+    for (const auto& name : input.name)
+        visual.name.push_back("collision_" + name);
+    return visual;
 }
 
-void ConstrainedManipulabilityMod::jointStateCallback(const sensor_msgs::msg::JointState::SharedPtr msg)
+
+// void PathCollisionChecking::getJacobianCallback(const std::shared_ptr<constrained_manipulability_interfaces::srv::GetJacobianMatrix::Request> req,
+//                                                     std::shared_ptr<constrained_manipulability_interfaces::srv::GetJacobianMatrix::Response> res)
+// {
+//     Eigen::Matrix<double, 6, Eigen::Dynamic> base_J_ee;
+//     getJacobian(req->joint_state, base_J_ee);
+//     res->jacobian = eigenToMatrix(base_J_ee);
+// }
+
+void PathCollisionChecking::jointStateCallback(const sensor_msgs::msg::JointState::SharedPtr msg)
 {
     joint_state_mutex_.lock();
     joint_state_ = *msg;
@@ -356,7 +351,7 @@ void ConstrainedManipulabilityMod::jointStateCallback(const sensor_msgs::msg::Jo
     displayCollisionModel(geometry_information, {0.1, 0.5, 0.2, 0.5});
  }
 
-void ConstrainedManipulabilityMod::octomapCallback(const octomap_msgs::msg::Octomap::SharedPtr msg)
+void PathCollisionChecking::octomapCallback(const octomap_msgs::msg::Octomap::SharedPtr msg)
 {
     // Get octomap pose w.r.t. the robot base frame
     geometry_msgs::msg::TransformStamped octomap_wrt_base;
@@ -385,352 +380,353 @@ void ConstrainedManipulabilityMod::octomapCallback(const octomap_msgs::msg::Octo
     collision_world_->addCollisionObject(octo_obj, OCTOMAP_ID);
 }
 
-void ConstrainedManipulabilityMod::generateOccupancyGrid()
-{
-    boost::mutex::scoped_lock lock(collision_world_mutex_);
+// void PathCollisionChecking::generateOccupancyGrid()
+// {
+//     boost::mutex::scoped_lock lock(collision_world_mutex_);
 
-    const double resolution = 0.05;  // tamaño del voxel
-    const double half_res = resolution / 2.0;
+//     const double resolution = 0.05;  // tamaño del voxel
+//     const double half_res = resolution / 2.0;
 
-    std::set<std::tuple<int, int, int>> occupied_cells;
-    std::vector<Eigen::Vector3d> all_voxel_centers;
+//     std::set<std::tuple<int, int, int>> occupied_cells;
+//     std::vector<Eigen::Vector3d> all_voxel_centers;
 
-    for (const auto& obj : collision_world_->getCollisionObjects())
-    {
-        if (!obj)
-            continue;
+//     for (const auto& obj : collision_world_->getCollisionObjects())
+//     {
+//         if (!obj)
+//             continue;
 
-        const fcl::AABBd& aabb = obj->collision_object->getAABB();
+//         const fcl::AABBd& aabb = obj->collision_object->getAABB();
 
-        double x_start = std::floor(aabb.min_.x() / resolution) * resolution - half_res;
-        double y_start = std::floor(aabb.min_.y() / resolution) * resolution - half_res;
-        double z_start = std::floor(aabb.min_.z() / resolution) * resolution - half_res;
+//         double x_start = std::floor(aabb.min_.x() / resolution) * resolution - half_res;
+//         double y_start = std::floor(aabb.min_.y() / resolution) * resolution - half_res;
+//         double z_start = std::floor(aabb.min_.z() / resolution) * resolution - half_res;
 
-        double x_end = std::ceil(aabb.max_.x() / resolution) * resolution + half_res;
-        double y_end = std::ceil(aabb.max_.y() / resolution) * resolution + half_res;
-        double z_end = std::ceil(aabb.max_.z() / resolution) * resolution + half_res;
+//         double x_end = std::ceil(aabb.max_.x() / resolution) * resolution + half_res;
+//         double y_end = std::ceil(aabb.max_.y() / resolution) * resolution + half_res;
+//         double z_end = std::ceil(aabb.max_.z() / resolution) * resolution + half_res;
 
-        for (double x = x_start; x <= x_end; x += resolution)
-        {
-            for (double y = y_start; y <= y_end; y += resolution)
-            {
-                for (double z = z_start; z <= z_end; z += resolution)
-                {
-                    Eigen::Vector3d voxel_center(x + half_res, y + half_res, z + half_res);
-                    all_voxel_centers.push_back(voxel_center);
-                    fcl::Transform3d tf = fcl::Transform3d::Identity();
-                    tf.translation() = voxel_center;
+//         for (double x = x_start; x <= x_end; x += resolution)
+//         {
+//             for (double y = y_start; y <= y_end; y += resolution)
+//             {
+//                 for (double z = z_start; z <= z_end; z += resolution)
+//                 {
+//                     Eigen::Vector3d voxel_center(x + half_res, y + half_res, z + half_res);
+//                     all_voxel_centers.push_back(voxel_center);
+//                     fcl::Transform3d tf = fcl::Transform3d::Identity();
+//                     tf.translation() = voxel_center;
 
-                    auto voxel_shape = std::make_shared<fcl::Boxd>(resolution, resolution, resolution);
-                    fcl::CollisionObjectd voxel_box(voxel_shape, tf);
+//                     auto voxel_shape = std::make_shared<fcl::Boxd>(resolution, resolution, resolution);
+//                     fcl::CollisionObjectd voxel_box(voxel_shape, tf);
 
-                    fcl::DistanceRequestd req(true);  // enable signed distance
-                    fcl::DistanceResultd res;
-                    double distance = fcl::distance(&voxel_box, obj->collision_object.get(), req, res);
+//                     fcl::DistanceRequestd req(true);  // enable signed distance
+//                     fcl::DistanceResultd res;
+//                     double distance = fcl::distance(&voxel_box, obj->collision_object.get(), req, res);
 
-                    // Tolerancia mayor para considerar interiores
-                    if (distance < resolution * 0.75)  // por ejemplo 75% del tamaño del voxel
-                    {
-                        int xi = static_cast<int>(std::floor(x / resolution));
-                        int yi = static_cast<int>(std::floor(y / resolution));
-                        int zi = static_cast<int>(std::floor(z / resolution));
-                        occupied_cells.emplace(xi, yi, zi);
-                    }
-                    if (distance > 0.5 * resolution && distance < 1.5 * resolution)
-                    {
-                        // RCLCPP_INFO(this->get_logger(), "Near miss at voxel (%.2f, %.2f, %.2f), distance = %.4f",
-                        //             voxel_center.x(), voxel_center.y(), voxel_center.z(), distance);
-                    }
-                }
-            }
-        }
-    }
+//                     // Tolerancia mayor para considerar interiores
+//                     if (distance < resolution * 0.75)  // por ejemplo 75% del tamaño del voxel
+//                     {
+//                         int xi = static_cast<int>(std::floor(x / resolution));
+//                         int yi = static_cast<int>(std::floor(y / resolution));
+//                         int zi = static_cast<int>(std::floor(z / resolution));
+//                         occupied_cells.emplace(xi, yi, zi);
+//                     }
+//                     if (distance > 0.5 * resolution && distance < 1.5 * resolution)
+//                     {
+//                         // RCLCPP_INFO(this->get_logger(), "Near miss at voxel (%.2f, %.2f, %.2f), distance = %.4f",
+//                         //             voxel_center.x(), voxel_center.y(), voxel_center.z(), distance);
+//                     }
+//                 }
+//             }
+//         }
+//     }
 
-    // RCLCPP_INFO(this->get_logger(), "Total occupied voxels: %zu", occupied_cells.size());
-    publishVoxelMarkers(occupied_cells, resolution);
+//     // RCLCPP_INFO(this->get_logger(), "Total occupied voxels: %zu", occupied_cells.size());
+//     publishVoxelMarkers(occupied_cells, resolution);
 
-    sensor_msgs::msg::PointCloud2 cloud_msg;
-    cloud_msg.header.stamp = this->now();
-    cloud_msg.header.frame_id = "base_link";  // o el frame correcto
+//     sensor_msgs::msg::PointCloud2 cloud_msg;
+//     cloud_msg.header.stamp = this->now();
+//     cloud_msg.header.frame_id = "base_link";  // o el frame correcto
 
-    sensor_msgs::PointCloud2Modifier modifier(cloud_msg);
-    modifier.setPointCloud2FieldsByString(1, "xyz");
-    modifier.resize(occupied_cells.size());
+//     sensor_msgs::PointCloud2Modifier modifier(cloud_msg);
+//     modifier.setPointCloud2FieldsByString(1, "xyz");
+//     modifier.resize(occupied_cells.size());
 
-    sensor_msgs::PointCloud2Iterator<float> iter_x(cloud_msg, "x");
-    sensor_msgs::PointCloud2Iterator<float> iter_y(cloud_msg, "y");
-    sensor_msgs::PointCloud2Iterator<float> iter_z(cloud_msg, "z");
+//     sensor_msgs::PointCloud2Iterator<float> iter_x(cloud_msg, "x");
+//     sensor_msgs::PointCloud2Iterator<float> iter_y(cloud_msg, "y");
+//     sensor_msgs::PointCloud2Iterator<float> iter_z(cloud_msg, "z");
 
-    for (const auto& cell : occupied_cells) {
-        geometry_msgs::msg::Point32 pt;
-        pt.x = (static_cast<float>(std::get<0>(cell)) + 0.5f) * resolution;
-        pt.y = (static_cast<float>(std::get<1>(cell)) + 0.5f) * resolution;
-        pt.z = (static_cast<float>(std::get<2>(cell)) + 0.5f) * resolution;
-        *iter_x = pt.x;
-        *iter_y = pt.y;
-        *iter_z = pt.z;
-        ++iter_x;
-        ++iter_y;
-        ++iter_z;
-    }
+//     for (const auto& cell : occupied_cells) {
+//         geometry_msgs::msg::Point32 pt;
+//         pt.x = (static_cast<float>(std::get<0>(cell)) + 0.5f) * resolution;
+//         pt.y = (static_cast<float>(std::get<1>(cell)) + 0.5f) * resolution;
+//         pt.z = (static_cast<float>(std::get<2>(cell)) + 0.5f) * resolution;
+//         *iter_x = pt.x;
+//         *iter_y = pt.y;
+//         *iter_z = pt.z;
+//         ++iter_x;
+//         ++iter_y;
+//         ++iter_z;
+//     }
 
-    occupied_voxels_pub_->publish(cloud_msg);
+//     occupied_voxels_pub_->publish(cloud_msg);
 
-    sensor_msgs::msg::PointCloud2 eval_cloud;
-    eval_cloud.header.stamp = this->now();
-    eval_cloud.header.frame_id = "base_link";
+//     sensor_msgs::msg::PointCloud2 eval_cloud;
+//     eval_cloud.header.stamp = this->now();
+//     eval_cloud.header.frame_id = "base_link";
 
-    sensor_msgs::PointCloud2Modifier eval_modifier(eval_cloud);
-    eval_modifier.setPointCloud2FieldsByString(2, "xyz", "rgb");
-    eval_modifier.resize(all_voxel_centers.size());
+//     sensor_msgs::PointCloud2Modifier eval_modifier(eval_cloud);
+//     eval_modifier.setPointCloud2FieldsByString(2, "xyz", "rgb");
+//     eval_modifier.resize(all_voxel_centers.size());
 
-    sensor_msgs::PointCloud2Iterator<float> ex(eval_cloud, "x");
-    sensor_msgs::PointCloud2Iterator<float> ey(eval_cloud, "y");
-    sensor_msgs::PointCloud2Iterator<float> ez(eval_cloud, "z");
-    sensor_msgs::PointCloud2Iterator<uint8_t> er(eval_cloud, "rgb");
+//     sensor_msgs::PointCloud2Iterator<float> ex(eval_cloud, "x");
+//     sensor_msgs::PointCloud2Iterator<float> ey(eval_cloud, "y");
+//     sensor_msgs::PointCloud2Iterator<float> ez(eval_cloud, "z");
+//     sensor_msgs::PointCloud2Iterator<uint8_t> er(eval_cloud, "rgb");
 
-    for (const auto& pt : all_voxel_centers) {
-        *ex = pt.x();
-        *ey = pt.y();
-        *ez = pt.z();
-        uint8_t r = 255, g = 0, b = 0;
-        uint32_t rgb = (r << 16) | (g << 8) | b;
-        *er = *reinterpret_cast<float*>(&rgb);
-        ++ex; ++ey; ++ez; ++er;
-    }
+//     for (const auto& pt : all_voxel_centers) {
+//         *ex = pt.x();
+//         *ey = pt.y();
+//         *ez = pt.z();
+//         uint8_t r = 255, g = 0, b = 0;
+//         uint32_t rgb = (r << 16) | (g << 8) | b;
+//         *er = *reinterpret_cast<float*>(&rgb);
+//         ++ex; ++ey; ++ez; ++er;
+//     }
 
-    evaluated_voxels_pub_->publish(eval_cloud);
+//     evaluated_voxels_pub_->publish(eval_cloud);
 
-}
+// }
 
-void ConstrainedManipulabilityMod::publishVoxelMarkers(const std::set<std::tuple<int, int, int>>& occupied_cells, double resolution)
-{
-    visualization_msgs::msg::MarkerArray marker_array;
-    int id = 0;
+// void PathCollisionChecking::publishVoxelMarkers(const std::set<std::tuple<int, int, int>>& occupied_cells, double resolution)
+// {
+//     visualization_msgs::msg::MarkerArray marker_array;
+//     int id = 0;
 
-    for (const auto& [xi, yi, zi] : occupied_cells)
-    {
-        visualization_msgs::msg::Marker marker;
-        marker.header.frame_id = "world";  // usa tu frame adecuado
-        marker.header.stamp = this->now();
-        marker.ns = "occupied_voxels";
-        marker.id = id++;
-        marker.type = visualization_msgs::msg::Marker::CUBE;
-        marker.action = visualization_msgs::msg::Marker::ADD;
-        marker.pose.position.x = (xi + 0.5) * resolution;
-        marker.pose.position.y = (yi + 0.5) * resolution;
-        marker.pose.position.z = (zi + 0.5) * resolution;
-        marker.pose.orientation.w = 1.0;
-        marker.scale.x = resolution;
-        marker.scale.y = resolution;
-        marker.scale.z = resolution;
-        marker.color.r = 0.0f;
-        marker.color.g = 0.8f;
-        marker.color.b = 0.1f;
-        marker.color.a = 0.5f;
-        marker.lifetime = rclcpp::Duration::from_seconds(1.0);  // permanente
+//     for (const auto& [xi, yi, zi] : occupied_cells)
+//     {
+//         visualization_msgs::msg::Marker marker;
+//         marker.header.frame_id = "world";  // usa tu frame adecuado
+//         marker.header.stamp = this->now();
+//         marker.ns = "occupied_voxels";
+//         marker.id = id++;
+//         marker.type = visualization_msgs::msg::Marker::CUBE;
+//         marker.action = visualization_msgs::msg::Marker::ADD;
+//         marker.pose.position.x = (xi + 0.5) * resolution;
+//         marker.pose.position.y = (yi + 0.5) * resolution;
+//         marker.pose.position.z = (zi + 0.5) * resolution;
+//         marker.pose.orientation.w = 1.0;
+//         marker.scale.x = resolution;
+//         marker.scale.y = resolution;
+//         marker.scale.z = resolution;
+//         marker.color.r = 0.0f;
+//         marker.color.g = 0.8f;
+//         marker.color.b = 0.1f;
+//         marker.color.a = 0.5f;
+//         marker.lifetime = rclcpp::Duration::from_seconds(1.0);  // permanente
 
-        marker_array.markers.push_back(marker);
-    }
+//         marker_array.markers.push_back(marker);
+//     }
 
-    occupancy_pub_->publish(marker_array);
-}
+//     occupancy_pub_->publish(marker_array);
+// }
 
 
-void ConstrainedManipulabilityMod::linLimitCallback(const std_msgs::msg::Float32::SharedPtr msg)
-{
-    setLinearizationLimit(msg->data);    
-}
+// void PathCollisionChecking::linLimitCallback(const std_msgs::msg::Float32::SharedPtr msg)
+// {
+//     setLinearizationLimit(msg->data);    
+// }
 
-void ConstrainedManipulabilityMod::checkCollisionCallback()
-{
-    // joint_state_mutex_.lock();
-    // sensor_msgs::msg::JointState curr_joint_state = joint_state_;
-    // joint_state_mutex_.unlock();
+// void PathCollisionChecking::checkCollisionCallback()
+// {
+//     // joint_state_mutex_.lock();
+//     // sensor_msgs::msg::JointState curr_joint_state = joint_state_;
+//     // joint_state_mutex_.unlock();
 
-    // // checkCollision(curr_joint_state);    // opcion original
+//     // // checkCollision(curr_joint_state);    // opcion original
 
-    // bool collision_detected = checkCollision(curr_joint_state);  // opcion propia
-    // if (collision_detected)
-    // {
-    //     RCLCPP_WARN(this->get_logger(), "¡Colisión detectada!");
-    // }
-    // else
-    // {
-    //     RCLCPP_WARN(this->get_logger(), "Sin colisión");
-    // }  
+//     // bool collision_detected = checkCollision(curr_joint_state);  // opcion propia
+//     // if (collision_detected)
+//     // {
+//     //     RCLCPP_WARN(this->get_logger(), "¡Colisión detectada!");
+//     // }
+//     // else
+//     // {
+//     //     RCLCPP_WARN(this->get_logger(), "Sin colisión");
+//     // }  
 
-    // static bool last_collision_state = false;
-    // rclcpp::Logger logger = this->get_logger();
+//     // static bool last_collision_state = false;
+//     // rclcpp::Logger logger = this->get_logger();
 
-    // joint_state_mutex_.lock();
-    // sensor_msgs::msg::JointState curr_joint_state = joint_state_;
-    // joint_state_mutex_.unlock();
+//     // joint_state_mutex_.lock();
+//     // sensor_msgs::msg::JointState curr_joint_state = joint_state_;
+//     // joint_state_mutex_.unlock();
     
-    // bool collision_detected = checkCollision(curr_joint_state);
+//     // bool collision_detected = checkCollision(curr_joint_state);
 
-    // if (collision_detected != last_collision_state)
-    // {
-    //     last_collision_state = collision_detected;
-    //     if (collision_detected)
-    //     {
-    //         RCLCPP_WARN(logger, "¡Colisión detectada!");
-    //     }
-    //     else
-    //     {
-    //         RCLCPP_WARN(logger, "Sin colisión");
-    //     }
-    // }
+//     // if (collision_detected != last_collision_state)
+//     // {
+//     //     last_collision_state = collision_detected;
+//     //     if (collision_detected)
+//     //     {
+//     //         RCLCPP_WARN(logger, "¡Colisión detectada!");
+//     //     }
+//     //     else
+//     //     {
+//     //         RCLCPP_WARN(logger, "Sin colisión");
+//     //     }
+//     // }
 
-    joint_state_mutex_.lock();
-    sensor_msgs::msg::JointState curr_joint_state = joint_state_;
-    joint_state_mutex_.unlock();
+//     joint_state_mutex_.lock();
+//     sensor_msgs::msg::JointState curr_joint_state = joint_state_;
+//     joint_state_mutex_.unlock();
 
 
-    bool collision_detected = false;
+//     bool collision_detected = false;
 
-    try
-    {
-        collision_detected = checkCollision(curr_joint_state);
-    }
-    catch (const std::exception& e)
-    {
-        RCLCPP_ERROR(this->get_logger(), "Exception in checkCollision: %s", e.what());
-        return;
-    }
-    catch (...)
-    {
-        RCLCPP_ERROR(this->get_logger(), "Unknown exception in checkCollision");
-        return;
-    }
+//     try
+//     {
+//         collision_detected = checkCollision(curr_joint_state);
+//     }
+//     catch (const std::exception& e)
+//     {
+//         RCLCPP_ERROR(this->get_logger(), "Exception in checkCollision: %s", e.what());
+//         return;
+//     }
+//     catch (...)
+//     {
+//         RCLCPP_ERROR(this->get_logger(), "Unknown exception in checkCollision");
+//         return;
+//     }
 
-    if (collision_detected != last_collision_state_)
-    {
-        last_collision_state_ = collision_detected;
-        if (collision_detected)
-        {
-            RCLCPP_WARN(this->get_logger(), "Collision detected!");
-        }
-        else
-        {
-            RCLCPP_INFO(this->get_logger(), "All collisions cleared");
-        }
-    }
-}
+//     if (collision_detected != last_collision_state_)
+//     {
+//         last_collision_state_ = collision_detected;
+//         if (collision_detected)
+//         {
+//             RCLCPP_WARN(this->get_logger(), "Collision detected!");
+//         }
+//         else
+//         {
+//             RCLCPP_INFO(this->get_logger(), "All collisions cleared");
+//         }
+//     }
+// }
 
 /// Private member methods (excluding ROS callbacks)
 
-bool ConstrainedManipulabilityMod::addCollisionObject(const robot_collision_checking::FCLObjectPtr& obj, int object_id)
+bool PathCollisionChecking::addCollisionObject(const robot_collision_checking::FCLObjectPtr& obj, int object_id)
 {
     return collision_world_->addCollisionObject(obj, object_id);
 }
 
-bool ConstrainedManipulabilityMod::removeCollisionObject(int object_id)
+bool PathCollisionChecking::removeCollisionObject(int object_id)
 {
     return collision_world_->removeCollisionObject(object_id);
 }
 
-bool ConstrainedManipulabilityMod::checkCollision(const sensor_msgs::msg::JointState& joint_state)
-{
-    KDL::JntArray kdl_joint_positions(ndof_);
-    jointStatetoKDLJointArray(chain_, joint_state, kdl_joint_positions);
+// bool PathCollisionChecking::checkCollision(const sensor_msgs::msg::JointState& joint_state)
+// {
+//     KDL::JntArray kdl_joint_positions(ndof_);
+//     jointStatetoKDLJointArray(chain_, joint_state, kdl_joint_positions);
 
-    GeometryInformation geometry_information;
-    getCollisionModel(kdl_joint_positions, geometry_information);
+//     GeometryInformation geometry_information;
+//     getCollisionModel(kdl_joint_positions, geometry_information);
 
-    std::vector<shapes::ShapeMsg> current_shapes;
-    std::vector<geometry_msgs::msg::Pose> shapes_poses;
-    convertCollisionModel(geometry_information, current_shapes, shapes_poses);
+//     std::vector<shapes::ShapeMsg> current_shapes;
+//     std::vector<geometry_msgs::msg::Pose> shapes_poses;
+//     convertCollisionModel(geometry_information, current_shapes, shapes_poses);
 
-    // Build collision geometry for robot if not yet created
-    // Assume collision geometry for robot's meshes do not change
-    if (robot_collision_geometry_.size() == 0)
-    {
-        createRobotCollisionModel(geometry_information);
-    }
+//     // Build collision geometry for robot if not yet created
+//     // Assume collision geometry for robot's meshes do not change
+//     if (robot_collision_geometry_.size() == 0)
+//     {
+//         createRobotCollisionModel(geometry_information);
+//     }
     
-    boost::mutex::scoped_lock lock(collision_world_mutex_);
+//     boost::mutex::scoped_lock lock(collision_world_mutex_);
 
-    // Self-collision check
-    bool self_collision_detected = checkSelfCollision(geometry_information);
-    if (self_collision_detected != last_self_collision_state_)
-    {
-        last_self_collision_state_ = self_collision_detected;
-        if (self_collision_detected)
-        {
-            RCLCPP_WARN(this->get_logger(), "Self-collision detected!");
-        }
-        else
-        {
-            RCLCPP_INFO(this->get_logger(), "Self-collision cleared.");
-        }
-    }
+//     // Self-collision check
+//     bool self_collision_detected = checkSelfCollision(geometry_information);
+//     if (self_collision_detected != last_self_collision_state_)
+//     {
+//         last_self_collision_state_ = self_collision_detected;
+//         if (self_collision_detected)
+//         {
+//             RCLCPP_WARN(this->get_logger(), "Self-collision detected!");
+//         }
+//         else
+//         {
+//             RCLCPP_INFO(this->get_logger(), "Self-collision cleared.");
+//         }
+//     }
 
-    // External environement collision check
-    bool env_collision_detected = false;
-    int num_shapes = geometry_information.shapes.size();
-    for (int i = 0; i < num_shapes; i++)
-    {
-        Eigen::Affine3d obj_pose;
-        tf2::fromMsg(shapes_poses[i], obj_pose);
-        std::vector<int> collision_object_ids;
-        if (current_shapes[i].which() == 0)
-        {
-            robot_collision_checking::FCLObjectPtr obj = std::make_shared<robot_collision_checking::FCLObject>(
-                boost::get<shape_msgs::msg::SolidPrimitive>(current_shapes[i]), obj_pose);
+//     // External environement collision check
+//     bool env_collision_detected = false;
+//     int num_shapes = geometry_information.shapes.size();
+//     for (int i = 0; i < num_shapes; i++)
+//     {
+//         Eigen::Affine3d obj_pose;
+//         tf2::fromMsg(shapes_poses[i], obj_pose);
+//         std::vector<int> collision_object_ids;
+//         if (current_shapes[i].which() == 0)
+//         {
+//             robot_collision_checking::FCLObjectPtr obj = std::make_shared<robot_collision_checking::FCLObject>(
+//                 boost::get<shape_msgs::msg::SolidPrimitive>(current_shapes[i]), obj_pose);
 
-            fcl::Transform3d world_to_fcl;
-            robot_collision_checking::fcl_interface::transform2fcl(obj->object_transform, world_to_fcl);
-            robot_collision_checking::FCLCollisionObjectPtr co = std::make_shared<fcl::CollisionObjectd>(robot_collision_geometry_[i], world_to_fcl);
+//             fcl::Transform3d world_to_fcl;
+//             robot_collision_checking::fcl_interface::transform2fcl(obj->object_transform, world_to_fcl);
+//             robot_collision_checking::FCLCollisionObjectPtr co = std::make_shared<fcl::CollisionObjectd>(robot_collision_geometry_[i], world_to_fcl);
             
-            if (collision_world_->checkCollisionObject(co, collision_object_ids))
-            {
-                env_collision_detected = true;
-            }
-        }
-        else if (current_shapes[i].which() == 1)
-        {
-            robot_collision_checking::FCLObjectPtr obj = std::make_shared<robot_collision_checking::FCLObject>(
-                boost::get<shape_msgs::msg::Mesh>(current_shapes[i]), robot_collision_checking::MESH, obj_pose);
+//             if (collision_world_->checkCollisionObject(co, collision_object_ids))
+//             {
+//                 env_collision_detected = true;
+//             }
+//         }
+//         else if (current_shapes[i].which() == 1)
+//         {
+//             robot_collision_checking::FCLObjectPtr obj = std::make_shared<robot_collision_checking::FCLObject>(
+//                 boost::get<shape_msgs::msg::Mesh>(current_shapes[i]), robot_collision_checking::MESH, obj_pose);
 
-            fcl::Transform3d world_to_fcl;
-            robot_collision_checking::fcl_interface::transform2fcl(obj->object_transform, world_to_fcl);
-            robot_collision_checking::FCLCollisionObjectPtr co = std::make_shared<fcl::CollisionObjectd>(robot_collision_geometry_[i], world_to_fcl);
+//             fcl::Transform3d world_to_fcl;
+//             robot_collision_checking::fcl_interface::transform2fcl(obj->object_transform, world_to_fcl);
+//             robot_collision_checking::FCLCollisionObjectPtr co = std::make_shared<fcl::CollisionObjectd>(robot_collision_geometry_[i], world_to_fcl);
 
-            if (collision_world_->checkCollisionObject(co, collision_object_ids))
-            {
-                env_collision_detected = true;
-            }
-        }
-        else
-        {
-            RCLCPP_ERROR(this->get_logger(), "Collision geometry not supported");
-        }
-    }
+//             if (collision_world_->checkCollisionObject(co, collision_object_ids))
+//             {
+//                 env_collision_detected = true;
+//             }
+//         }
+//         else
+//         {
+//             RCLCPP_ERROR(this->get_logger(), "Collision geometry not supported");
+//         }
+//     }
 
-    if (env_collision_detected != last_env_collision_state_)
-    {
-        last_env_collision_state_ = env_collision_detected;
-        if (env_collision_detected)
-        {
-            RCLCPP_WARN(this->get_logger(), "Environement collision detected!");
-        }
-        else
-        {
-            RCLCPP_INFO(this->get_logger(), "Environement collision cleared.");
-        }
-    }
+//     if (env_collision_detected != last_env_collision_state_)
+//     {
+//         last_env_collision_state_ = env_collision_detected;
+//         if (env_collision_detected)
+//         {
+//             RCLCPP_WARN(this->get_logger(), "Environement collision detected!");
+//         }
+//         else
+//         {
+//             RCLCPP_INFO(this->get_logger(), "Environement collision cleared.");
+//         }
+//     }
     
-    return env_collision_detected || self_collision_detected;
-}
+//     return env_collision_detected || self_collision_detected;
+// }
 
-bool ConstrainedManipulabilityMod::evaluateCollisionState(const sensor_msgs::msg::JointState& joint_state, bool& self_collision, bool& env_collision)
+bool PathCollisionChecking::evaluateCollisionState(const sensor_msgs::msg::JointState& joint_state, bool& self_collision, bool& env_collision)
 {
     KDL::JntArray kdl_joint_positions(ndof_);
     jointStatetoKDLJointArray(chain_, joint_state, kdl_joint_positions);
 
     GeometryInformation geometry_information;
     getCollisionModel(kdl_joint_positions, geometry_information);
+    // displayCollisionModel(geometry_information, {0.1, 0.5, 0.2, 0.5});
 
     std::vector<shapes::ShapeMsg> current_shapes;
     std::vector<geometry_msgs::msg::Pose> shapes_poses;
@@ -786,7 +782,7 @@ bool ConstrainedManipulabilityMod::evaluateCollisionState(const sensor_msgs::msg
 }
 
 
-bool ConstrainedManipulabilityMod::checkSelfCollision(const GeometryInformation& geometry_information)
+bool PathCollisionChecking::checkSelfCollision(const GeometryInformation& geometry_information)
 {
     bool any_collision_active = false;
     int n = geometry_information.shapes.size();
@@ -839,13 +835,13 @@ bool ConstrainedManipulabilityMod::checkSelfCollision(const GeometryInformation&
     return any_collision_active;
 }
 
-bool ConstrainedManipulabilityMod::isAdjacent(int i, int j) const
+bool PathCollisionChecking::isAdjacent(int i, int j) const
 {
     // Ignora colisión entre links consecutivos (diferencia 1)
     return (std::abs(i - j) == 1);
 }
 
-void ConstrainedManipulabilityMod::displayCollisionModel(const GeometryInformation& geometry_information, const Eigen::Vector4d& color)
+void PathCollisionChecking::displayCollisionModel(const GeometryInformation& geometry_information, const Eigen::Vector4d& color)
 {
     auto marker_array_msg = std::make_shared<visualization_msgs::msg::MarkerArray>();
 
@@ -889,7 +885,7 @@ void ConstrainedManipulabilityMod::displayCollisionModel(const GeometryInformati
         mkr.ns = "collision_objects";
         mkr.header.frame_id = base_link_;
         mkr.action = visualization_msgs::msg::Marker::ADD;
-        mkr.lifetime = rclcpp::Duration(1, 0);
+        mkr.lifetime = rclcpp::Duration(0, 0);
         std::string obj_type = world_obj->object->getTypeString();
 
         // Get object pose relative to world_frame
@@ -979,10 +975,10 @@ void ConstrainedManipulabilityMod::displayCollisionModel(const GeometryInformati
 
     mkr_pub_->publish(*marker_array_msg);
 
-    generateOccupancyGrid();
+    // generateOccupancyGrid();
 }
 
-void ConstrainedManipulabilityMod::convertCollisionModel(const GeometryInformation& geometry_information,
+void PathCollisionChecking::convertCollisionModel(const GeometryInformation& geometry_information,
                                                       std::vector<shapes::ShapeMsg>& current_shapes,
                                                       std::vector<geometry_msgs::msg::Pose>& shapes_poses) const
 {
@@ -999,7 +995,7 @@ void ConstrainedManipulabilityMod::convertCollisionModel(const GeometryInformati
     }
 }
 
-void ConstrainedManipulabilityMod::createRobotCollisionModel(const GeometryInformation& geometry_information)
+void PathCollisionChecking::createRobotCollisionModel(const GeometryInformation& geometry_information)
 {
     std::vector<shapes::ShapeMsg> current_shapes;
     std::vector<geometry_msgs::msg::Pose> shapes_poses;
@@ -1037,7 +1033,7 @@ void ConstrainedManipulabilityMod::createRobotCollisionModel(const GeometryInfor
     }
 }
 
-std::unique_ptr<shapes::Shape> ConstrainedManipulabilityMod::constructShape(const urdf::Geometry* geom) const
+std::unique_ptr<shapes::Shape> PathCollisionChecking::constructShape(const urdf::Geometry* geom) const
 {
     assert(geom != nullptr);
 
@@ -1084,7 +1080,7 @@ std::unique_ptr<shapes::Shape> ConstrainedManipulabilityMod::constructShape(cons
     return (result);
 }
 
-void ConstrainedManipulabilityMod::getKDLKinematicInformation(const KDL::JntArray& kdl_joint_positions, Eigen::Affine3d& T,
+void PathCollisionChecking::getKDLKinematicInformation(const KDL::JntArray& kdl_joint_positions, Eigen::Affine3d& T,
                                                            Eigen::Matrix<double, 6, Eigen::Dynamic>& Jac, int segment) const
 {
     KDL::Frame cartpos;
@@ -1105,7 +1101,7 @@ void ConstrainedManipulabilityMod::getKDLKinematicInformation(const KDL::JntArra
     Jac = base_J_link_origin.data;
 }
 
-void ConstrainedManipulabilityMod::getCollisionModel(const KDL::JntArray& kdl_joint_positions, GeometryInformation& geometry_information) const
+void PathCollisionChecking::getCollisionModel(const KDL::JntArray& kdl_joint_positions, GeometryInformation& geometry_information) const
 {
     geometry_information.clear();
     Eigen::Affine3d link_origin_T_collision_origin, base_T_link_origin, base_T_collision_origin;
@@ -1161,7 +1157,7 @@ void ConstrainedManipulabilityMod::getCollisionModel(const KDL::JntArray& kdl_jo
     }
 }
 
-void ConstrainedManipulabilityMod::getJacobian(const sensor_msgs::msg::JointState& joint_state, Eigen::Matrix<double, 6, Eigen::Dynamic>& Jac) const
+void PathCollisionChecking::getJacobian(const sensor_msgs::msg::JointState& joint_state, Eigen::Matrix<double, 6, Eigen::Dynamic>& Jac) const
 {
     KDL::JntArray kdl_joint_positions(ndof_);
     Eigen::Affine3d base_T_ee;
@@ -1169,24 +1165,24 @@ void ConstrainedManipulabilityMod::getJacobian(const sensor_msgs::msg::JointStat
     getKDLKinematicInformation(kdl_joint_positions, base_T_ee, Jac);
 }
 
-void ConstrainedManipulabilityMod::getTransform(const sensor_msgs::msg::JointState& joint_state, Eigen::Affine3d& T) const
-{
-    KDL::JntArray kdl_joint_positions(ndof_);
-    Eigen::Matrix<double, 6, Eigen::Dynamic> Jac;
-    jointStatetoKDLJointArray(chain_, joint_state, kdl_joint_positions);
-    getKDLKinematicInformation(kdl_joint_positions, T, Jac);
-}
+// void PathCollisionChecking::getTransform(const sensor_msgs::msg::JointState& joint_state, Eigen::Affine3d& T) const
+// {
+//     KDL::JntArray kdl_joint_positions(ndof_);
+//     Eigen::Matrix<double, 6, Eigen::Dynamic> Jac;
+//     jointStatetoKDLJointArray(chain_, joint_state, kdl_joint_positions);
+//     getKDLKinematicInformation(kdl_joint_positions, T, Jac);
+// }
 
-void ConstrainedManipulabilityMod::getCartPos(const sensor_msgs::msg::JointState& joint_state, geometry_msgs::msg::Pose& geo_pose) const
-{
-    KDL::JntArray kdl_joint_positions(ndof_);
-    jointStatetoKDLJointArray(chain_, joint_state, kdl_joint_positions);
+// void PathCollisionChecking::getCartPos(const sensor_msgs::msg::JointState& joint_state, geometry_msgs::msg::Pose& geo_pose) const
+// {
+//     KDL::JntArray kdl_joint_positions(ndof_);
+//     jointStatetoKDLJointArray(chain_, joint_state, kdl_joint_positions);
 
-    KDL::Frame cartpos;
-    kdl_fk_solver_->JntToCart(kdl_joint_positions, cartpos);
+//     KDL::Frame cartpos;
+//     kdl_fk_solver_->JntToCart(kdl_joint_positions, cartpos);
 
-    Eigen::Affine3d T;
-    tf2::transformKDLToEigen(cartpos, T);
-    geo_pose = tf2::toMsg(T);
-}
+//     Eigen::Affine3d T;
+//     tf2::transformKDLToEigen(cartpos, T);
+//     geo_pose = tf2::toMsg(T);
+// }
 } // namespace constrained_manipulability

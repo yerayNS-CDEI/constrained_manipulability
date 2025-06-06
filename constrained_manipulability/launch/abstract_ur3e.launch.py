@@ -14,22 +14,12 @@ def generate_launch_description():
             get_package_share_directory('constrained_manipulability'), 'launch'),
             '/abstract_robot.launch.py']),
         launch_arguments={
-            'scene_config': 'example_scene_ur3',
+            'root_col': 'collision_base_link',
+            'tip_col': 'collision_tool0',
             'root': 'base_link',
-            'tip': 'tool0',
-            'show_mp': 'True',
-            'show_cmp': 'True'}.items()
-    )
-    
-    # UR launch
-    ur_launch = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource([os.path.join(
-            get_package_share_directory('ur_description'), 'launch'),
-            '/view_ur.launch.py']),
-        launch_arguments={'ur_type': 'ur3e'}.items()
+            'tip': 'tool0'}.items()
     )
 
     return LaunchDescription([
         abstract_robot_launch,
-        # ur_launch
     ])

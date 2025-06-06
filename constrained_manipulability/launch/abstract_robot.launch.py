@@ -10,23 +10,17 @@ from launch_ros.parameter_descriptions import ParameterValue
 
 
 def generate_launch_description():
-    # Scene config setup
-    scene_config = LaunchConfiguration('scene_config')
-    scene_config_arg = DeclareLaunchArgument(
-        'scene_config',
-        default_value='example_scene1',
-        description='Name of scene configuration file'
-    )
-    
-    def get_scene_config_file(context):
-        scene_config_value = context.launch_configurations['scene_config']
-        return os.path.join(
-            get_package_share_directory('constrained_manipulability'),
-            'config',
-            f'{scene_config_value}.yaml'
-        )
-
     # Declare launch arguments for node parameters
+    root_col_arg = DeclareLaunchArgument(
+        'root_col', 
+        default_value='base_link', 
+        description='Base frame of the robot'
+        )
+    tip_col_arg = DeclareLaunchArgument(
+        'tip_col', 
+        default_value='ee_link',
+        description='End-effector link of the robot'
+        )
     root_arg = DeclareLaunchArgument(
         'root',
         default_value='base_link',
@@ -37,28 +31,21 @@ def generate_launch_description():
         default_value='ee_link',
         description='End-effector link of the robot'
     )
-    show_mp_arg = DeclareLaunchArgument(
-        'show_mp',
-        default_value='True',
-        description='Whether to show the allowable manipulability polytope or not'
-    )
-    show_cmp_arg = DeclareLaunchArgument(
-        'show_cmp',
-        default_value='True',
-        description='Whether to show the constrained manipulability polytope or not'
-    )
+    
     # Launch configurations
     root = LaunchConfiguration('root')
     tip = LaunchConfiguration('tip')
-    show_mp = LaunchConfiguration('show_mp')
-    show_cmp = LaunchConfiguration('show_cmp')
+    root_col = LaunchConfiguration('root_col')
+    tip_col = LaunchConfiguration('tip_col')
 
     # Define node parameters
     constrained_manip_params = {
         'root': root,
-        'tip': tip,
-        'show_mp': ParameterValue(show_mp, value_type=bool),
-        'show_cmp': ParameterValue(show_cmp, value_type=bool)
+        'tip': tip
+    }
+    path_collision_params = {
+        'root': root_col,
+        'tip': tip_col
     }
     constrained_manip_node = Node(
         package='constrained_manipulability',
@@ -66,20 +53,25 @@ def generate_launch_description():
         name='constrained_manipulability_node_mod',
         parameters=[constrained_manip_params]
     )
+    path_collision_node = Node(
+        package='constrained_manipulability',
+        executable='path_collision_checking',
+        name='path_collision_checking',
+        namespace="collision",
+        parameters=[path_collision_params],
+        remappings=[
+            ('add_remove_collision_mesh', '/add_remove_collision_mesh'),
+            ('add_remove_collision_solid', '/add_remove_collision_solid'),
+            ('check_collision_pose', '/check_collision_pose'),
+            ('update_collision_pose', '/update_collision_pose'),
+        ]
+    )
 
     return LaunchDescription([
-        scene_config_arg,
+        root_col_arg,
+        tip_col_arg,
         root_arg,
         tip_arg,
-        show_mp_arg,
-        show_cmp_arg,
-        constrained_manip_node, 
-        # OpaqueFunction(function=lambda context: [
-        #     Node(
-        #         package='constrained_manipulability',
-        #         executable='abstract_scene_example',
-        #         name='abstract_scene_example',
-        #         parameters=[get_scene_config_file(context)]
-        #     )
-        # ])
+        constrained_manip_node,
+        path_collision_node
     ])

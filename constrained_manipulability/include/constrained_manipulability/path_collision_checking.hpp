@@ -78,11 +78,11 @@ struct GeometryInformation
 
 const int OCTOMAP_ID = 777;
 
-class ConstrainedManipulabilityMod : public rclcpp::Node
+class PathCollisionChecking : public rclcpp::Node
 {
     public:
-        explicit ConstrainedManipulabilityMod(const rclcpp::NodeOptions& options);
-        ~ConstrainedManipulabilityMod(){};
+        explicit PathCollisionChecking(const rclcpp::NodeOptions& options);
+        ~PathCollisionChecking(){};
 
     private:
         /// Constrained manipulability ROS interface
@@ -111,6 +111,8 @@ class ConstrainedManipulabilityMod : public rclcpp::Node
 
         void checkCollisionCallback();
         void polytopePubCallback();
+
+        sensor_msgs::msg::JointState convertToNamespaceJointState(const sensor_msgs::msg::JointState& input) const;
 
         /// Constrained manipulability private methods
 
