@@ -59,12 +59,12 @@ def generate_launch_description():
         name='path_collision_checking',
         namespace="collision",
         parameters=[path_collision_params],
-        remappings=[
-            ('add_remove_collision_mesh', '/add_remove_collision_mesh'),
-            ('add_remove_collision_solid', '/add_remove_collision_solid'),
-            ('check_collision_pose', '/check_collision_pose'),
-            ('update_collision_pose', '/update_collision_pose'),
-        ]
+        # remappings=[
+        #     ('add_remove_collision_mesh', '/add_remove_collision_mesh'),
+        #     ('add_remove_collision_solid', '/add_remove_collision_solid'),
+        #     ('check_collision_pose', '/check_collision_pose'),
+        #     ('update_collision_pose', '/update_collision_pose'),
+        # ]
     )
 
     return LaunchDescription([

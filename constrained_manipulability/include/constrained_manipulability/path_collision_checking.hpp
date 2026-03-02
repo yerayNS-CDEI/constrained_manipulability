@@ -59,6 +59,10 @@
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <sensor_msgs/point_cloud2_iterator.hpp>
 
+#include "constrained_manipulability_interfaces/srv/add_remove_collision_mesh_stamped.hpp"
+#include "constrained_manipulability_interfaces/srv/add_remove_collision_solid_stamped.hpp"
+#include "constrained_manipulability_interfaces/srv/update_collision_pose_stamped.hpp"
+
 namespace constrained_manipulability
 {
 /// GeometryInformation contains all geometric information obtained from chain
@@ -103,6 +107,13 @@ class PathCollisionChecking : public rclcpp::Node
         void checkCollisionPoseCallback(const std::shared_ptr<constrained_manipulability_interfaces::srv::CheckCollisionPose::Request> req,
                                 std::shared_ptr<constrained_manipulability_interfaces::srv::CheckCollisionPose::Response> res);
 
+        void addRemoveMeshStampedCallback(const std::shared_ptr<constrained_manipulability_interfaces::srv::AddRemoveCollisionMeshStamped::Request> req,
+                                   std::shared_ptr<constrained_manipulability_interfaces::srv::AddRemoveCollisionMeshStamped::Response> res);
+        void addRemoveSolidStampedCallback(const std::shared_ptr<constrained_manipulability_interfaces::srv::AddRemoveCollisionSolidStamped::Request> req,
+                                    std::shared_ptr<constrained_manipulability_interfaces::srv::AddRemoveCollisionSolidStamped::Response> res);
+        void updateCollisionObjectPoseStampedCallback(const std::shared_ptr<constrained_manipulability_interfaces::srv::UpdateCollisionPoseStamped::Request> req,
+                                std::shared_ptr<constrained_manipulability_interfaces::srv::UpdateCollisionPoseStamped::Response> res);
+        
         void jointStateCallback(const sensor_msgs::msg::JointState::SharedPtr msg);
         void octomapCallback(const octomap_msgs::msg::Octomap::SharedPtr msg);
         void generateOccupancyGrid();
@@ -368,6 +379,10 @@ class PathCollisionChecking : public rclcpp::Node
         rclcpp::Service<constrained_manipulability_interfaces::srv::GetSlicedPolytope>::SharedPtr sliced_polytope_server_;
         rclcpp::Service<constrained_manipulability_interfaces::srv::UpdateCollisionPose>::SharedPtr update_pos_server_;
         rclcpp::Service<constrained_manipulability_interfaces::srv::CheckCollisionPose>::SharedPtr check_collision_pose_server_;
+
+        rclcpp::Service<constrained_manipulability_interfaces::srv::AddRemoveCollisionMeshStamped>::SharedPtr mesh_coll_server_st_;
+        rclcpp::Service<constrained_manipulability_interfaces::srv::AddRemoveCollisionSolidStamped>::SharedPtr solid_coll_server_st_;
+        rclcpp::Service<constrained_manipulability_interfaces::srv::UpdateCollisionPoseStamped>::SharedPtr update_pos_server_st_;
 
         // ROS subscribers/publishers/timers
         rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr joint_sub_;

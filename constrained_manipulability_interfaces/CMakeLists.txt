@@ -21,10 +21,13 @@ set(msg_files
 set(srv_files
   srv/AddRemoveCollisionMesh.srv
   srv/AddRemoveCollisionSolid.srv
+  srv/AddRemoveCollisionMeshStamped.srv
+  srv/AddRemoveCollisionSolidStamped.srv
   srv/GetJacobianMatrix.srv
   srv/GetPolytopes.srv
   srv/GetSlicedPolytope.srv
   srv/UpdateCollisionPose.srv
+  srv/UpdateCollisionPoseStamped.srv
   srv/CheckCollisionPose.srv
 )
 

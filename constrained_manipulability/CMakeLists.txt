@@ -34,6 +34,9 @@ find_package(tf2_eigen_kdl REQUIRED)
 find_package(tf2_kdl REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(visualization_msgs REQUIRED)
+find_package(fcl REQUIRED)
+find_package(assimp REQUIRED)
+find_package(resource_retriever REQUIRED)
 
 find_package(urdf QUIET)
 if(urdf_FOUND)
@@ -60,7 +63,12 @@ include_directories(
   include
   ${Eigen3_INCLUDE_DIRS}
   ${OCTOMAP_INCLUDE_DIRS}
+  ${fcl_INCLUDE_DIRS}
+  ${assimp_INCLUDE_DIRS}
 )
+
+include_directories(/home/yeray/libraries/fcl_new/install/include)
+link_directories(/home/yeray/libraries/fcl_new/install/lib)
 
 set(dependencies
   rclcpp
@@ -80,6 +88,9 @@ set(dependencies
   tf2_kdl
   urdf
   visualization_msgs
+  fcl
+  assimp
+  resource_retriever
   constrained_manipulability_interfaces
   octomap_filter_interfaces
   robot_collision_checking
@@ -96,6 +107,8 @@ target_link_libraries(${PROJECT_NAME}
   ${Eigen3_LIBRARIES}
   ${EIGEN_CDDLIB}
   ${OCTOMAP_LIBRARIES}
+  ${fcl_LIBRARIES}
+  ${assimp_LIBRARIES}
 )
 ament_target_dependencies(${PROJECT_NAME}
   ${dependencies}
@@ -128,6 +141,16 @@ target_link_libraries(path_collision_checking
   ${PROJECT_NAME}
 )
 ament_target_dependencies(path_collision_checking
+  ${dependencies}
+)
+
+add_executable(load_building_mesh_client
+  src/load_building_mesh.cpp
+)
+target_link_libraries(load_building_mesh_client
+  ${PROJECT_NAME}
+)
+ament_target_dependencies(load_building_mesh_client
   ${dependencies}
 )
 
@@ -191,7 +214,12 @@ install(TARGETS constrained_manipulability_node abstract_scene_example slicing_p
   RUNTIME DESTINATION lib/${PROJECT_NAME}
 )
 
-install(TARGETS dynamic_collision_world_node dynamic_scene_node constrained_manipulability_node_mod path_collision_checking
+install(TARGETS 
+  dynamic_collision_world_node
+  dynamic_scene_node 
+  constrained_manipulability_node_mod 
+  path_collision_checking
+  load_building_mesh_client
   RUNTIME DESTINATION lib/${PROJECT_NAME}
 )
 
@@ -204,6 +232,7 @@ install(DIRECTORY launch config DESTINATION share/${PROJECT_NAME})
 install(PROGRAMS 
   scripts/cm_client.py
   scripts/lin_limit_pub.py
+  scripts/load_building_client.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

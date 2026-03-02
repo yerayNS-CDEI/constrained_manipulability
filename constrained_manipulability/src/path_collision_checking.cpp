@@ -20,6 +20,8 @@
 #include <Eigen/Dense>
 #include <geometry_msgs/msg/pose.hpp>
 
+#include <tf2_eigen/tf2_eigen.hpp>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 
 namespace constrained_manipulability
 {
@@ -176,6 +178,18 @@ PathCollisionChecking::PathCollisionChecking(const rclcpp::NodeOptions& options)
     check_collision_pose_server_ = this->create_service<constrained_manipulability_interfaces::srv::CheckCollisionPose>(
         "check_collision_pose",  std::bind(&PathCollisionChecking::checkCollisionPoseCallback, this, std::placeholders::_1, std::placeholders::_2));
 
+    mesh_coll_server_st_ = this->create_service<constrained_manipulability_interfaces::srv::AddRemoveCollisionMeshStamped>(
+    "add_remove_collision_mesh_stamped",
+    std::bind(&PathCollisionChecking::addRemoveMeshStampedCallback, this, std::placeholders::_1, std::placeholders::_2));
+
+    solid_coll_server_st_ = this->create_service<constrained_manipulability_interfaces::srv::AddRemoveCollisionSolidStamped>(
+    "add_remove_collision_solid_stamped",
+    std::bind(&PathCollisionChecking::addRemoveSolidStampedCallback, this, std::placeholders::_1, std::placeholders::_2));
+
+    update_pos_server_st_ = this->create_service<constrained_manipulability_interfaces::srv::UpdateCollisionPoseStamped>(
+    "update_collision_pose_stamped",
+    std::bind(&PathCollisionChecking::updateCollisionObjectPoseStampedCallback, this, std::placeholders::_1, std::placeholders::_2));
+
     rclcpp::SubscriptionOptions joint_sub_options;
     joint_sub_options.callback_group = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
     rclcpp::SubscriptionOptions octo_sub_options;
@@ -237,6 +251,41 @@ void PathCollisionChecking::addRemoveMeshCallback(const std::shared_ptr<constrai
     res->result = true;
 }
 
+void PathCollisionChecking::addRemoveMeshStampedCallback(
+  const std::shared_ptr<constrained_manipulability_interfaces::srv::AddRemoveCollisionMeshStamped::Request> req,
+  std::shared_ptr<constrained_manipulability_interfaces::srv::AddRemoveCollisionMeshStamped::Response> res)
+{
+  res->result = false;
+  boost::mutex::scoped_lock lock(collision_world_mutex_);
+
+  if (req->remove) {
+    removeCollisionObject(req->object_id);
+    res->result = true;
+    return;
+  }
+
+  // 1) Transform PoseStamped -> base_link_
+  geometry_msgs::msg::PoseStamped pose_in_base;
+  try {
+    pose_in_base = buffer_->transform(req->pose, base_link_, tf2::durationFromSec(0.3));
+  } catch (const tf2::TransformException& ex) {
+    RCLCPP_ERROR(this->get_logger(), "TF %s -> %s failed: %s",
+                 req->pose.header.frame_id.c_str(), base_link_.c_str(), ex.what());
+    return;
+  }
+
+  // 2) Convert to Eigen
+  Eigen::Affine3d base_T_mesh;
+  tf2::fromMsg(pose_in_base.pose, base_T_mesh);
+
+  // 3) Create object in collision world (internal frame = base_link_)
+  auto obj = std::make_shared<robot_collision_checking::FCLObject>(
+      req->mesh, robot_collision_checking::MESH, base_T_mesh);
+  addCollisionObject(obj, req->object_id);
+
+  res->result = true;
+}
+
 void PathCollisionChecking::addRemoveSolidCallback(const std::shared_ptr<constrained_manipulability_interfaces::srv::AddRemoveCollisionSolid::Request> req,
                                                        std::shared_ptr<constrained_manipulability_interfaces::srv::AddRemoveCollisionSolid::Response> res)
 {
@@ -257,12 +306,64 @@ void PathCollisionChecking::addRemoveSolidCallback(const std::shared_ptr<constra
     }
 }
 
+
+void PathCollisionChecking::addRemoveSolidStampedCallback(
+  const std::shared_ptr<constrained_manipulability_interfaces::srv::AddRemoveCollisionSolidStamped::Request> req,
+  std::shared_ptr<constrained_manipulability_interfaces::srv::AddRemoveCollisionSolidStamped::Response> res)
+{
+  res->result = false;
+  boost::mutex::scoped_lock lock(collision_world_mutex_);
+
+  if (req->remove) {
+    removeCollisionObject(req->object_id);
+    res->result = true;
+    return;
+  }
+
+  geometry_msgs::msg::PoseStamped pose_in_base;
+  try {
+    pose_in_base = buffer_->transform(req->pose, base_link_, tf2::durationFromSec(0.3));
+  } catch (const tf2::TransformException& ex) {
+    RCLCPP_ERROR(this->get_logger(), "TF %s -> %s failed: %s",
+                 req->pose.header.frame_id.c_str(), base_link_.c_str(), ex.what());
+    return;
+  }
+
+  Eigen::Affine3d base_T_solid;
+  tf2::fromMsg(pose_in_base.pose, base_T_solid);
+
+  auto obj = std::make_shared<robot_collision_checking::FCLObject>(req->solid, base_T_solid);
+  addCollisionObject(obj, req->object_id);
+
+  res->result = true;
+}
+
 void PathCollisionChecking::updateCollisionObjectPoseCallback(const std::shared_ptr<constrained_manipulability_interfaces::srv::UpdateCollisionPose::Request> req,
                                                        std::shared_ptr<constrained_manipulability_interfaces::srv::UpdateCollisionPose::Response> res)
 {
     Eigen::Affine3d new_pose;
     tf2::fromMsg(req->pose, new_pose);
     res->result = collision_world_->updateCollisionObjectPose(req->object_id, new_pose);
+}
+
+
+void PathCollisionChecking::updateCollisionObjectPoseStampedCallback(
+  const std::shared_ptr<constrained_manipulability_interfaces::srv::UpdateCollisionPoseStamped::Request> req,
+  std::shared_ptr<constrained_manipulability_interfaces::srv::UpdateCollisionPoseStamped::Response> res)
+{
+  geometry_msgs::msg::PoseStamped pose_in_base;
+  try {
+    pose_in_base = buffer_->transform(req->pose, base_link_, tf2::durationFromSec(0.3));
+  } catch (const tf2::TransformException& ex) {
+    RCLCPP_ERROR(this->get_logger(), "TF %s -> %s failed: %s",
+                 req->pose.header.frame_id.c_str(), base_link_.c_str(), ex.what());
+    res->result = false;
+    return;
+  }
+
+  Eigen::Affine3d base_T_obj;
+  tf2::fromMsg(pose_in_base.pose, base_T_obj);
+  res->result = collision_world_->updateCollisionObjectPose(req->object_id, base_T_obj);
 }
 
 void PathCollisionChecking::checkCollisionPoseCallback(const std::shared_ptr<constrained_manipulability_interfaces::srv::CheckCollisionPose::Request> req,
